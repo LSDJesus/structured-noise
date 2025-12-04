@@ -17,3 +17,15 @@ Or for development mode:
 ```bash
 pip install -e .
 ```
+
+If you find this work useful, please cite:
+
+```
+@article{zeng2025neuralremaster,
+  title   = {{NeuralRemaster}: Phase-Preserving Diffusion for Structure-Aligned Generation},
+  author  = {Zeng, Yu and Ochoa, Charles and Zhou, Mingyuan and Patel, Vishal M and
+             Guizilini, Vitor and McAllister, Rowan},
+  journal = {arXiv preprint arXiv:XXXX.XXXXX},
+  year    = {2025}
+}
+```
