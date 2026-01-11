@@ -2,11 +2,6 @@
 
 [Project Page](https://yuzeng-at-tri.github.io/ppd-page/)
 
-Usage: 
-
-```
-python -m structured_noise.structured_noise_pytorch --path_in dog.jpg --path_out dog_structured_noise.png
-```
 
 ## For ComfyUI
 clone this repo into custom_nodes
@@ -23,6 +18,12 @@ Or for development mode:
 
 ```bash
 pip install -e .
+```
+
+Usage: 
+
+```
+python -m structured_noise.structured_noise_pytorch --path_in dog.jpg --path_out dog_structured_noise.png
 ```
 
 refer to https://github.com/zengxianyu/PPD-examples for usage in training or inference
