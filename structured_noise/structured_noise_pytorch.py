@@ -19,13 +19,13 @@ def create_frequency_soft_cutoff_mask(height: int, width: int, cutoff_radius: fl
         width: Image width  
         cutoff_radius: Frequency cutoff radius (0 = no structure, max_radius = full structure)
         transition_width: Width of smooth transition (smaller = sharper cutoff)
-        device: Device to create tensor on
+        device: Device to create tensor on (required)
     
     Returns:
         torch.Tensor: Frequency mask of shape (height, width)
     """
     if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        raise ValueError("device must be specified")
     
     # Create frequency coordinates
     u = torch.arange(height, device=device)
@@ -42,16 +42,33 @@ def create_frequency_soft_cutoff_mask(height: int, width: int, cutoff_radius: fl
     
     return mask
 
-def clip_frequency_magnitude(noise_magnitudes, clip_percentile=0.95):
-    """Clip frequency domain magnitude to prevent large values."""
+def clip_frequency_magnitude(noise_magnitudes: torch.Tensor, clip_percentile: float = 0.95) -> torch.Tensor:
+    """
+    Clip frequency domain magnitude to prevent extreme outliers.
     
-    # Calculate clipping threshold
-    clip_threshold = torch.quantile(noise_magnitudes, clip_percentile)
+    Large FFT magnitude values can cause numerical instability in the inverse FFT,
+    leading to extreme pixel values in the output. This clips the top percentile
+    to maintain stability while preserving the overall magnitude distribution.
     
-    # Clip large values
-    clipped_magnitudes = torch.clamp(noise_magnitudes, max=clip_threshold)
+    Args:
+        noise_magnitudes: Frequency domain magnitudes to clip
+        clip_percentile: Percentile threshold (0.95 = clip top 5% of values)
     
-    return clipped_magnitudes
+    Returns:
+        Clipped magnitude tensor
+    """
+    # Use approximate quantile for large tensors (faster on GPU)
+    # For tensors > 1M elements, subsample to reduce computation
+    numel = noise_magnitudes.numel()
+    if numel > 1_000_000:
+        # Subsample ~100k elements for approximate quantile
+        flat = noise_magnitudes.flatten()
+        indices = torch.randperm(numel, device=noise_magnitudes.device)[:100_000]
+        clip_threshold = torch.quantile(flat[indices], clip_percentile)
+    else:
+        clip_threshold = torch.quantile(noise_magnitudes, clip_percentile)
+    
+    return torch.clamp(noise_magnitudes, max=clip_threshold)
 
 def generate_structured_noise_batch_vectorized(
     image_batch: torch.Tensor,
@@ -120,8 +137,8 @@ def generate_structured_noise_batch_vectorized(
     fft_shifted = torch.fft.fftshift(fft, dim=(-2, -1))
     
     # Extract phase and magnitude for all images
+    # Note: phases are already bounded in [-π, π] from torch.angle(), no clipping needed
     image_phases = torch.angle(fft_shifted)
-    image_phases = clip_frequency_magnitude(image_phases)
     image_magnitudes = torch.abs(fft_shifted)
     
     if input_noise is not None:
@@ -159,6 +176,8 @@ def generate_structured_noise_batch_vectorized(
         
         ## Sample from a standard Rayleigh distribution (scale=1) and then scale it.
         uu = torch.rand(size=image_magnitudes.shape, device=device)
+        # Clamp to prevent log(0) = -inf which causes NaN in sqrt
+        uu = uu.clamp(min=1e-10)
         noise_magnitudes = rayleigh_scale * torch.sqrt(-2.0 * torch.log(uu))
         if input_noise is not None:
             noise_fft = torch.fft.fft2(noise_batch, dim=(-2, -1))
@@ -205,8 +224,12 @@ def generate_structured_noise_batch_vectorized(
     # Take real part
     structured_noise_padded = torch.real(structured_noise_padded)
 
-    clamp_mask = (structured_noise_padded < -5) + (structured_noise_padded > 5)
-    clamp_mask = (clamp_mask > 0).float()
+    # Safety clamp: Replace extreme outliers with original noise to prevent artifacts.
+    # Threshold of ±5 std chosen empirically - values beyond this indicate numerical
+    # instability from FFT processing and would create visible artifacts.
+    EXTREME_VALUE_THRESHOLD = 5.0
+    clamp_mask = (structured_noise_padded < -EXTREME_VALUE_THRESHOLD) | (structured_noise_padded > EXTREME_VALUE_THRESHOLD)
+    clamp_mask = clamp_mask.float()
 
     structured_noise_padded = structured_noise_padded * (1 - clamp_mask) + noise_batch * clamp_mask
     
