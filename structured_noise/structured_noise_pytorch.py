@@ -25,7 +25,7 @@ def create_frequency_soft_cutoff_mask(height: int, width: int, cutoff_radius: fl
         torch.Tensor: Frequency mask of shape (height, width)
     """
     if device is None:
-        device = torch.device('cpu')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     # Create frequency coordinates
     u = torch.arange(height, device=device)
