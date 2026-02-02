@@ -101,6 +101,7 @@ def generate_structured_noise_batch_vectorized(
     batch_size, channels, height, width = image_batch.shape
     dtype = image_batch.dtype
     device = image_batch.device
+    # FFT requires fp32 for numerical stability (bf16 causes precision loss in phase)
     image_batch = image_batch.float()
     
     # Calculate padding size for overlap-add method
@@ -148,6 +149,7 @@ def generate_structured_noise_batch_vectorized(
             (pad_w//2, pad_w//2, pad_h//2, pad_h//2), 
             mode='reflect'  # Mirror edges for natural transitions
         )
+        # FFT requires fp32
         noise_batch = noise_batch.float()
     else:
         # Generate Gaussian noise for the padded size
